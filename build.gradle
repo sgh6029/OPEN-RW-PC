@@ -54,6 +54,9 @@ task runGame(type: JavaExec) {
     jvmArgs "-Djava.library.path=${nativesDir.absolutePath}"
     workingDir = projectDir
     standardInput = System.in
+    
+    // 将 natives 目录添加到 PATH，解决 DLL 依赖问题
+    environment 'PATH', "${nativesDir.absolutePath};${System.getenv('PATH')}"
 }
 
 // 编译时复制 DLL 到 build 目录

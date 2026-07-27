@@ -101,6 +101,7 @@
         <item>Hard</item>
         <item>Very Hard</item>
         <item>Impossible</item>
+        <item>OpenAI</item>
     </string-array>
 
     <string-array name="setTeams_array">

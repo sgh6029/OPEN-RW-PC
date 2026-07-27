@@ -153,6 +153,16 @@ public class SettingsEngine {
     public String externalSAFPathExtra;
     public boolean smartSelection_v2;
     public boolean replayTracing;
+    
+    // OpenAI 配置字段
+    public String openAIEndpoint = "https://api.openai.com/v1";
+    public String openAIApiKey = "";
+    public String openAIModel = "gpt-4o-mini";
+    public float openAITemperature = 0.3f;
+    public int openAIMaxTokens = 2048;
+    public int openAIThreads = 1;  // AI 并行线程数，默认 1，最大 4
+    public float openAIIncomeMultiplier = 1.0f;  // OpenAI 收入倍率，默认 1.0，最大 4.0
+    
     SharedPreferences prefs;
     static SettingsEngine settingsEngine = null;
     HashMap settingFields = new HashMap();
@@ -511,6 +521,16 @@ public class SettingsEngine {
         this.mouseOrders = this.getIntPref("mouseOrders", 1);
         this.mousePlacement = this.getIntPref("mousePlacement", 1);
         this.autosaving = this.getBooleanPref("autosaving", true);
+        
+        // OpenAI 配置读取
+        this.openAIEndpoint = this.getStringPref("openAIEndpoint", "https://api.openai.com/v1");
+        this.openAIApiKey = this.getStringPref("openAIApiKey", "");
+        this.openAIModel = this.getStringPref("openAIModel", "gpt-4o-mini");
+        this.openAITemperature = this.getFloatPref("openAITemperature", 0.3f);
+        this.openAIMaxTokens = this.getIntPref("openAIMaxTokens", 2048);
+        this.openAIThreads = this.getIntPref("openAIThreads", 1);
+        this.openAIIncomeMultiplier = this.getFloatPref("openAIIncomeMultiplier", 1.0f);
+        
         if (GameEngine.isAndroidVersionStatic2) {
             this.loadFromFileSystem();
         }
@@ -635,6 +655,16 @@ public class SettingsEngine {
         editor.putInt("mouseOrders", this.mouseOrders);
         editor.putInt("mousePlacement", this.mousePlacement);
         editor.putBoolean("autosaving", this.autosaving);
+        
+        // OpenAI 配置保存
+        editor.putString("openAIEndpoint", this.openAIEndpoint);
+        editor.putString("openAIApiKey", this.openAIApiKey);
+        editor.putString("openAIModel", this.openAIModel);
+        editor.putFloat("openAITemperature", this.openAITemperature);
+        editor.putInt("openAIMaxTokens", this.openAIMaxTokens);
+        editor.putInt("openAIThreads", this.openAIThreads);
+        editor.putFloat("openAIIncomeMultiplier", this.openAIIncomeMultiplier);
+        
         editor.commit();
         return true;
     }

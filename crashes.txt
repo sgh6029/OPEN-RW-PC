@@ -1,0 +1,23 @@
+
+fatal (at 2026-07-27 16:22:41.827 - 1.15)
+java.lang.UnsatisfiedLinkError: D:\OPEN-RW-PC-Work\libs\natives\windows\rocketConnector64.dll: Can't find dependent libraries
+	at java.base/jdk.internal.loader.NativeLibraries.load(Native Method)
+	at java.base/jdk.internal.loader.NativeLibraries$NativeLibraryImpl.open(NativeLibraries.java:331)
+	at java.base/jdk.internal.loader.NativeLibraries.loadLibrary(NativeLibraries.java:197)
+	at java.base/jdk.internal.loader.NativeLibraries.loadLibrary(NativeLibraries.java:139)
+	at java.base/jdk.internal.loader.NativeLibraries.findFromPaths(NativeLibraries.java:259)
+	at java.base/jdk.internal.loader.NativeLibraries.loadLibrary(NativeLibraries.java:251)
+	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2451)
+	at java.base/java.lang.Runtime.loadLibrary0(Runtime.java:916)
+	at java.base/java.lang.System.loadLibrary(System.java:2063)
+	at com.LibRocket.<clinit>(LibRocket.java:486)
+	at com.corrodinggames.rts.java.Main.h(Main.java:498)
+	at com.corrodinggames.rts.java.SlickGameHandler.c(SlickGameHandler.java:202)
+	at com.corrodinggames.rts.java.SlickGameHandler.b(SlickGameHandler.java:189)
+	at com.corrodinggames.rts.java.SlickGameHandler.render(SlickGameHandler.java:659)
+	at com.corrodinggames.rts.java.SlickGameContainer.updateAndRender(SlickGameContainer.java:119)
+	at com.corrodinggames.rts.java.SlickGameContainer.gameLoop(SlickGameContainer.java:59)
+	at org.newdawn.slick.AppGameContainer.start(AppGameContainer.java:321)
+	at com.corrodinggames.rts.java.GameStartupRunnable.run(GameStartupRunnable.java:33)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
