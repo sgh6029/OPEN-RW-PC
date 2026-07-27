@@ -1129,11 +1129,11 @@ public class Root
                     : element2.getAttribute((String) "value");
             try {
                 l2.bQ.setValueDynamic((String) string3, (String) string5);
-            } catch (Exception exception) {
-                GameEngine.a("saveSettings: error saving '" + string3 + "': " + exception.toString());
-                exception.printStackTrace();
+            } catch (NumberFormatException numberFormatException) {
+                this.alert((String) ("Error:" + numberFormatException.getMessage()));
                 continue;
             }
+            break;
         }
     }
 

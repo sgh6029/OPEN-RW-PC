@@ -2335,6 +2335,13 @@ public class GameLogic
                 }
 
                 com.corrodinggames.rts.game.PlayerTeam.h(var2);
+
+                // OpenAI AI 控制器 tick（仅当有 OpenAI 难度的 AI 玩家时生效）
+                try {
+                    com.corrodinggames.rts.ai.openai.OpenAIPlayerController.getInstance().tick(var2);
+                } catch (Exception openAIEx) {
+                    com.corrodinggames.rts.gameFramework.GameEngine.a("[OpenAI] tick error: " + openAIEx.toString());
+                }
             }
 
             this.mouseWorldX = true;

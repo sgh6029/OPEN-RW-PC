@@ -184,6 +184,7 @@
           <option value="1"  >${i:menus.settings.option.ai.1}</option>
           <option value="2"  >${i:menus.settings.option.ai.2}</option>
           <option value="3"  >${i:menus.settings.option.ai.3}</option>
+          <option value="4"  >OpenAI</option>
         </select>
         </div>
 		    

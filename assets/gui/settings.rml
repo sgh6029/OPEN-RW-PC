@@ -470,7 +470,36 @@
 	              <option value="1"  >${i:menus.settings.option.ai.1}</option>
 	              <option value="2"  >${i:menus.settings.option.ai.2}</option>
 	              <option value="3"  >${i:menus.settings.option.ai.3}</option>
+	              <option value="4"  >OpenAI</option>
               </select>
+	            </div>
+
+	            <!-- OpenAI 配置区 -->
+	            <div class="group" id="openaiConfigGroup">
+	              <h3>OpenAI Configuration</h3>
+	              <div class="inputDiv">
+	                <label>API Endpoint:</label>
+	                <input type="text" data-settings id="openAIEndpoint" style="width:300dp" />
+	              </div>
+	              <div class="inputDiv">
+	                <label>API Key:</label>
+	                <input type="password" data-settings id="openAIApiKey" style="width:300dp" />
+	              </div>
+	              <div class="inputDiv">
+	                <label>Model:</label>
+	                <input type="text" data-settings id="openAIModel" style="width:200dp" />
+	              </div>
+	              <div class="inputDiv">
+	                <label>Income Multiplier (1.0-4.0):</label>
+	                <input type="text" data-settings id="openAIIncomeMultiplier" style="width:80dp" />
+	              </div>
+	              <div class="inputDiv">
+	                <label>AI Threads (1-4):</label>
+	                <input type="text" data-settings id="openAIThreads" style="width:80dp" />
+	              </div>
+	              <div class="infoText" style="color:#ffcc00;font-size:12dp;">
+	                Note: Only 1 OpenAI AI player allowed per game.
+	              </div>
 	            </div>
 	            
 	            
