@@ -1,0 +1,19 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package test.rudp;
+
+import test.rudp.ReliableSocket;
+
+public interface s {
+    public void a(ReliableSocket var1);
+
+    public void b(ReliableSocket var1);
+
+    public void c(ReliableSocket var1);
+
+    public void d(ReliableSocket var1);
+
+    public void e(ReliableSocket var1);
+}
+

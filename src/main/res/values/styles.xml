@@ -1,0 +1,59 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<resources>
+    <style name="SpinnerTheme" parent="@android:style/Theme.Holo">
+        <item name="android:textColor">#ffffff</item>
+    </style>
+    <style name="SpinnerItem">
+        <item name="android:textColor">#ffffff</item>
+    </style>
+    <style name="SpinnerDropDownItem">
+        <item name="android:textColor">#ffffff</item>
+    </style>
+    <style name="MenuButton" parent="@android:style/Widget.Button">
+        <item name="android:textSize">16.0dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#ffffff</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/custombutton</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:shadowColor">#000000</item>
+        <item name="android:shadowDx">0.0</item>
+        <item name="android:shadowDy">-1.0</item>
+        <item name="android:shadowRadius">0.2</item>
+    </style>
+    <style name="LevelButton" parent="@android:style/Widget.Button">
+        <item name="android:textSize">16.0dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#ffffff</item>
+        <item name="android:gravity">center</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+        <item name="android:shadowColor">#000000</item>
+        <item name="android:shadowDx">0.0</item>
+        <item name="android:shadowDy">-1.0</item>
+        <item name="android:shadowRadius">0.2</item>
+    </style>
+    <style name="SettingsHeader" parent="@android:style/TextAppearance.Widget.TextView">
+        <item name="android:textSize">16.0sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#42e347</item>
+        <item name="android:background">#626363</item>
+        <item name="android:paddingLeft">55.0dp</item>
+        <item name="android:paddingTop">2.0dp</item>
+        <item name="android:paddingRight">55.0dp</item>
+        <item name="android:paddingBottom">2.0dp</item>
+        <item name="android:minWidth">250.0dp</item>
+    </style>
+    <style name="SettingsSectionGroup">
+        <item name="android:padding">10.0dp</item>
+    </style>
+    <style name="SettingsMainButtons">
+        <item name="android:padding">10.0dp</item>
+    </style>
+    <style name="CustomButton" parent="@android:style/Theme.NoTitleBar">
+        <item name="android:buttonStyle">@style/MenuButton</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+    <style name="app_theme" parent="@android:style/Theme.Light" />
+</resources>

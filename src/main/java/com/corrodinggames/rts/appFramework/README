@@ -1,0 +1,1 @@
+n.java 、 p.java 有final Handler是原先没有被初始化的 补了new 请留意

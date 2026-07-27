@@ -1,0 +1,56 @@
+a ar$1	extractor
+j ar$2	hoverTank
+k ar$3	artillery
+l ar$4	helicopter
+m ar$5	airShip
+n ar$6	gunShip
+o ar$7	missileShip
+p ar$8	gunBoat
+q ar$9	megaTank
+r ar$10	laserTank
+s ar$11	hovercraft
+b ar$12	landFactory
+t ar$13	ladybug
+u ar$14	battleShip
+v ar$15	tankDestroyer
+w ar$16	heavyTank
+x ar$17	heavyHoverTank
+y ar$18	laserDefence
+z ar$19	dropship
+A ar$20	tree
+B ar$21	repairbay
+C ar$22	NukeLaucher
+c ar$23	airFactory
+D ar$24	AntiNukeLaucher
+E ar$25	mammothTank
+F ar$26	experimentalTank
+G ar$27	experimentalLandFactory
+H ar$28	crystalResource
+I ar$29	wall_v
+J ar$30	fabricator
+K ar$31	attackSubmarine
+L ar$32	builderShip
+M ar$33	amphibiousJet
+d ar$34	seaFactory
+N ar$35	supplyDepot
+O ar$36	experimentalHoverTank
+P ar$37	turret_artillery
+Q ar$38	turret_flamethrower
+R ar$39	fogRevealer
+S ar$40	spreadingFire
+T ar$41	antiAirTurretT2
+ar$42	turretT2
+ar$43	turretT3
+W ar$44	damagingBorder
+e ar$45	commandCenter
+X ar$46	zoneMarker
+Y ar$47	editorOrBuilder
+Z ar$48	dummyNonUnitWithTeam
+/////49没有
+f ar$50	turret
+g ar$51	antiAirTurret
+h ar$52	builder
+i ar$53	tank
+
+g.b.a -> movementSpeed
+g.b.b -> specialActionBlock

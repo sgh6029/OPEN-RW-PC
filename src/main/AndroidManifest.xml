@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:versionCode="176"
+    android:versionName="1.15"
+    android:installLocation="auto"
+    android:compileSdkVersion="29"
+    android:compileSdkVersionCodename="10"
+    platformBuildVersionCode="29"
+    platformBuildVersionName="10"
+    tools:ignore="OverwriteManifestPackage">
+
+    <supports-screens
+        android:anyDensity="true"
+        android:smallScreens="false"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:resizeable="true"
+        android:xlargeScreens="true" />
+        
+    <application
+        android:theme="@style/app_theme"
+        android:label="@string/app_name"
+        android:icon="@drawable/icon"
+        android:name="com.corrodinggames.rts.appFramework.RWApplication"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
+        android:usesCleartextTraffic="true"
+        android:resizeableActivity="true"
+        android:hasFragileUserData="true"
+        android:allowAudioPlaybackCapture="true"
+        android:requestLegacyExternalStorage="true">
+        
+        <meta-data
+            android:name="android.max_aspect"
+            android:value="4.0" />
+            
+        <uses-library
+            android:name="org.apache.http.legacy"
+            android:required="false" />
+            
+        <activity
+            android:label="@string/app_name"
+            android:name="com.corrodinggames.rts.appFramework.IntroScreen"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.MainMenuActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.SettingsActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.InGameActivity"
+            android:screenOrientation="behind"
+            android:configChanges="fontScale|keyboard|keyboardHidden|locale|mcc|mnc|navigation|orientation|screenLayout|touchscreen|uiMode"
+            android:exported="false" />
+            
+        <!-- 为所有其他 activity 添加 android:exported 属性 -->
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.LevelSelectActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.LevelGroupSelectActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.LoadLevelActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.ReplaySelectActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.CreditsActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.SettingsKeysActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.MultiplayerLobbyActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.MultiplayerBattleroomActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.NewMissionStarterActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.QuickHelpActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.ClosingActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.corrodinggames.rts.appFramework.ModsActivity"
+            android:screenOrientation="behind"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:exported="false" />
+            
+        <provider
+            android:name=".appFramework.GenericFileProvider"
+            android:exported="false"
+            android:authorities="com.corrodinggames.rts.fileProvider"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+    </application>
+    
+    <!-- 权限声明 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="com.android.vending.CHECK_LICENSE" />
+</manifest>

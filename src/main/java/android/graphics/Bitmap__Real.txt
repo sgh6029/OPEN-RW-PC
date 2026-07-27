@@ -1,0 +1,305 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  android.os.Parcel
+ *  android.os.Parcelable
+ *  android.os.Parcelable$Creator
+ *  android.util.DisplayMetrics
+ */
+package android.graphics;
+
+import android.os.Parcel;
+import android.os.Parcelable;
+import android.util.DisplayMetrics;
+import java.io.OutputStream;
+
+public final class Bitmap__Real
+implements Parcelable {
+    // 字段注释
+    public final int a; // nativePtr - 原生位图指针
+    private final boolean d; // isMutable - 是否可变
+    private boolean e; // hasAlpha - 是否有alpha通道
+    private int f; // width - 宽度
+    private int g; // height - 高度
+    private boolean h; // isRecycled - 是否已回收
+    int b; // density - 密度
+    private static volatile int i = -1; // 静态字段，用途未知
+    public static final Parcelable.Creator c = new BitmapCreator(); // CREATOR - Parcelable创建器
+
+    // 原方法名: checkRecycled
+    private void a(String string) {
+        if (!this.h) return;
+        throw new IllegalStateException((String)string);
+    }
+
+    // 原方法名: checkXY
+    private static void b(int n, int n2) {
+        if (n < 0) {
+            throw new IllegalArgumentException((String)"x must be >= 0");
+        }
+        if (n2 >= 0) return;
+        throw new IllegalArgumentException((String)"y must be >= 0");
+    }
+
+    // 原方法名: copy
+    public Bitmap a(Config bitmap$Config, boolean bl) {
+        this.a((String)"Can't copy a recycled bitmap");
+        Bitmap bitmap = Bitmap.nativeCopy((int)this.a, (int)bitmap$Config.e, (boolean)bl);
+        if (bitmap == null) return bitmap;
+        bitmap.e = this.e;
+        bitmap.b = this.b;
+        return bitmap;
+    }
+
+    // 原方法名: createBitmap
+    public static Bitmap a(int n, int n2, Config bitmap$Config) {
+        return Bitmap.a((int)n, (int)n2, (Config)bitmap$Config, (boolean)true);
+    }
+
+    // 原方法名: createBitmap (重载)
+    private static Bitmap a(int n, int n2, Config bitmap$Config, boolean bl) {
+        return Bitmap.a(null, (int)n, (int)n2, (Config)bitmap$Config, (boolean)bl);
+    }
+
+    // 原方法名: createBitmap (重载)
+    private static Bitmap a(DisplayMetrics displayMetrics, int n, int n2, Config bitmap$Config, boolean bl) {
+        if (n <= 0) throw new IllegalArgumentException((String)"width and height must be > 0");
+        if (n2 <= 0) {
+            throw new IllegalArgumentException((String)"width and height must be > 0");
+        }
+        Bitmap bitmap = Bitmap.nativeCreate(null, (int)0, (int)n, (int)n, (int)n2, (int)bitmap$Config.e, (boolean)true);
+        if (displayMetrics != null) {
+            bitmap.b = displayMetrics.densityDpi;
+        }
+        if (bitmap$Config != Config.ARGB_8888) return bitmap;
+        if (bl) return bitmap;
+        Bitmap.nativeErase((int)bitmap.a, (int)-16777216);
+        Bitmap.nativeSetHasAlpha((int)bitmap.a, (boolean)bl);
+        return bitmap;
+    }
+
+    // 原方法名: compress
+    public boolean a(CompressFormat bitmap$CompressFormat, int n, OutputStream outputStream) {
+        this.a((String)"Can't compress a recycled bitmap");
+        if (outputStream == null) {
+            throw new NullPointerException();
+        }
+        if (n < 0) throw new IllegalArgumentException((String)"quality must be 0..100");
+        if (n <= 100) return Bitmap.nativeCompress((int)this.a, (int)bitmap$CompressFormat.d, (int)n, (OutputStream)outputStream, (byte[])new byte[4096]);
+        throw new IllegalArgumentException((String)"quality must be 0..100");
+    }
+
+    // 原方法名: isMutable
+    public final boolean a() {
+        return this.d;
+    }
+
+    // 原方法名: getWidth
+    public final int b() {
+        return this.f;
+    }
+
+    // 原方法名: getHeight
+    public final int c() {
+        return this.g;
+    }
+
+    // 原方法名: getConfig
+    public final Config d() {
+        return Config.fromNative((int)Bitmap.nativeConfig((int)this.a));
+    }
+
+    // 原方法名: setHasAlpha
+    public void a(boolean bl) {
+        Bitmap.nativeSetHasAlpha((int)this.a, (boolean)bl);
+    }
+
+    // 原方法名: eraseColor
+    public void a(int n) {
+        this.a((String)"Can't erase a recycled bitmap");
+        if (!this.a()) {
+            throw new IllegalStateException((String)"cannot erase immutable bitmaps");
+        }
+        Bitmap.nativeErase((int)this.a, (int)n);
+    }
+
+    // 原方法名: getPixel
+    public int a(int n, int n2) {
+        this.a((String)"Can't call getPixel() on a recycled bitmap");
+        this.c((int)n, (int)n2);
+        return Bitmap.nativeGetPixel((int)this.a, (int)n, (int)n2, (boolean)this.e);
+    }
+
+    // 原方法名: getPixels
+    public void a(int[] nArray, int n, int n2, int n3, int n4, int n5, int n6) {
+        this.a((String)"Can't call getPixels() on a recycled bitmap");
+        if (n5 == 0) return;
+        if (n6 == 0) {
+            return;
+        }
+        this.a((int)n3, (int)n4, (int)n5, (int)n6, (int)n, (int)n2, (int[])nArray);
+        Bitmap.nativeGetPixels((int)this.a, (int[])nArray, (int)n, (int)n2, (int)n3, (int)n4, (int)n5, (int)n6, (boolean)this.e);
+    }
+
+    // 原方法名: checkCoordinates
+    private void c(int n, int n2) {
+        Bitmap.b((int)n, (int)n2);
+        if (n >= this.b()) {
+            throw new IllegalArgumentException((String)"x must be < bitmap.width()");
+        }
+        if (n2 < this.c()) return;
+        throw new IllegalArgumentException((String)"y must be < bitmap.height()");
+    }
+
+    // 原方法名: checkPixelsParameters
+    private void a(int n, int n2, int n3, int n4, int n5, int n6, int[] nArray) {
+        Bitmap.b((int)n, (int)n2);
+        if (n3 < 0) {
+            throw new IllegalArgumentException((String)"width must be >= 0");
+        }
+        if (n4 < 0) {
+            throw new IllegalArgumentException((String)"height must be >= 0");
+        }
+        if (n + n3 > this.b()) {
+            throw new IllegalArgumentException((String)"x + width must be <= bitmap.width()");
+        }
+        if (n2 + n4 > this.c()) {
+            throw new IllegalArgumentException((String)"y + height must be <= bitmap.height()");
+        }
+        if (Math.abs((int)n6) < n3) {
+            throw new IllegalArgumentException((String)"abs(stride) must be >= width");
+        }
+        int n7 = n5 + (n4 - 1) * n6;
+        int n8 = nArray.length;
+        if (n5 < 0) throw new ArrayIndexOutOfBoundsException();
+        if (n5 + n3 > n8) throw new ArrayIndexOutOfBoundsException();
+        if (n7 < 0) throw new ArrayIndexOutOfBoundsException();
+        if (n7 + n3 <= n8) return;
+        throw new ArrayIndexOutOfBoundsException();
+    }
+
+    // 原方法名: setPixel
+    public void a(int n, int n2, int n3) {
+        this.a((String)"Can't call setPixel() on a recycled bitmap");
+        if (!this.a()) {
+            throw new IllegalStateException();
+        }
+        this.c((int)n, (int)n2);
+        Bitmap.nativeSetPixel((int)this.a, (int)n, (int)n2, (int)n3, (boolean)this.e);
+    }
+
+    // 原方法名: setPixels
+    public void b(int[] nArray, int n, int n2, int n3, int n4, int n5, int n6) {
+        this.a((String)"Can't call setPixels() on a recycled bitmap");
+        if (!this.a()) {
+            throw new IllegalStateException();
+        }
+        if (n5 == 0) return;
+        if (n6 == 0) {
+            return;
+        }
+        this.a((int)n3, (int)n4, (int)n5, (int)n6, (int)n, (int)n2, (int[])nArray);
+        Bitmap.nativeSetPixels((int)this.a, (int[])nArray, (int)n, (int)n2, (int)n3, (int)n4, (int)n5, (int)n6, (boolean)this.e);
+    }
+
+    // 原方法名: describeContents
+    public int describeContents() {
+        return 0;
+    }
+
+    // 原方法名: writeToParcel
+    public void writeToParcel(Parcel parcel, int n) {
+        this.a((String)"Can't parcel a recycled bitmap");
+        if (Bitmap.nativeWriteToParcel((int)this.a, (boolean)this.d, (int)this.b, (Parcel)parcel)) return;
+        throw new RuntimeException((String)"native writeToParcel failed");
+    }
+
+    // 原生方法
+    private static native Bitmap nativeCreate(int[] var0, int var1, int var2, int var3, int var4, int var5, boolean var6);
+
+    private static native Bitmap nativeCopy(int var0, int var1, boolean var2);
+
+    private static native boolean nativeCompress(int var0, int var1, int var2, OutputStream var3, byte[] var4);
+
+    private static native void nativeErase(int var0, int var1);
+
+    private static native int nativeConfig(int var0);
+
+    private static native int nativeGetPixel(int var0, int var1, int var2, boolean var3);
+
+    private static native void nativeGetPixels(int var0, int[] var1, int var2, int var3, int var4, int var5, int var6, int var7, boolean var8);
+
+    private static native void nativeSetPixel(int var0, int var1, int var2, int var3, boolean var4);
+
+    private static native void nativeSetPixels(int var0, int[] var1, int var2, int var3, int var4, int var5, int var6, int var7, boolean var8);
+
+    private static native Bitmap nativeCreateFromParcel(Parcel var0);
+
+    private static native boolean nativeWriteToParcel(int var0, boolean var1, int var2, Parcel var3);
+
+    private static native void nativeSetHasAlpha(int var0, boolean var1);
+
+    // 原方法名: createFromParcel
+    static /* synthetic */ Bitmap a(Parcel parcel) {
+        return Bitmap.nativeCreateFromParcel((Parcel)parcel);
+    }
+
+    // 内部类定义
+    public enum Config {
+        ALPHA_8(2),
+        RGB_565(4),
+        ARGB_4444(5),
+        ARGB_8888(6);
+
+        final int e; // Native config value
+
+        Config(int nativeInt) {
+            this.e = nativeInt;
+        }
+
+        private static final Config[] NATIVE_VALUES = new Config[7];
+        
+        static {
+            NATIVE_VALUES[2] = ALPHA_8;
+            NATIVE_VALUES[4] = RGB_565;
+            NATIVE_VALUES[5] = ARGB_4444;
+            NATIVE_VALUES[6] = ARGB_8888;
+        }
+
+        static Config fromNative(int nativeInt) {
+            if (nativeInt >= 0 && nativeInt < NATIVE_VALUES.length) {
+                return NATIVE_VALUES[nativeInt];
+            }
+            return ARGB_8888; // Default
+        }
+    }
+
+    public enum CompressFormat {
+        JPEG(0),
+        PNG(1),
+        WEBP(2);
+
+        final int d; // Native format value
+
+        CompressFormat(int nativeInt) {
+            this.d = nativeInt;
+        }
+    }
+
+    private static class BitmapCreator implements Parcelable.Creator<Bitmap> {
+        @Override
+        public Bitmap createFromParcel(Parcel source) {
+            Bitmap bitmap = Bitmap.a(source);
+            if (bitmap == null) {
+                throw new RuntimeException("Failed to unparcel Bitmap");
+            }
+            return bitmap;
+        }
+
+        @Override
+        public Bitmap[] newArray(int size) {
+            return new Bitmap[size];
+        }
+    }
+}

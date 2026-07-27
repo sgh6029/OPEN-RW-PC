@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '7.0.0'
+    alias(libs.plugins.android.application) apply false
+}
+
+group = 'com.corrodinggames.rts'
+version = '1.0-SNAPSHOT'
+sourceCompatibility = '17'
+targetCompatibility = '17'
+
+// T1.2: PC 端主入口
+mainClassName = 'com.corrodinggames.rts.java.Main'
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    natives
+}
+
+dependencies {
+    // T1.2: compileOnly → implementation，shadow 才能打进 fat JAR
+    // 排除 natives-linux.jar（Windows 不需要）
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: ['natives-linux.jar'])
+
+    // T1.2: Windows LWJGL 原生库（DLL），从 Maven Central 拉取 LWJGL 2.9.3
+    implementation 'org.lwjgl.lwjgl:lwjgl-platform:2.9.3:natives-windows'
+    natives 'org.lwjgl.lwjgl:lwjgl-platform:2.9.3:natives-windows'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+compileJava {
+    options.encoding = 'UTF-8'
+}
+
+// T1.2: 提取 Windows native DLL 到构建目录
+task extractNatives(type: Copy) {
+    from {
+        configurations.natives.collect { zipTree(it) }
+    }
+    include '*.dll'
+    into "$buildDir/natives"
+}
+
+// T1.2: shadowJar 配置 — 将 Windows native DLL 放入 JAR 根目录
+shadowJar {
+    mergeServiceFiles()
+    dependsOn extractNatives
+    from("$buildDir/natives") {
+        include '*.dll'
+    }
+}

@@ -1,0 +1,96 @@
+version: 1
+
+# ── 文件范围控制 ──
+scope:
+  include: []
+  exclude:
+    - "src/main/res/drawable/**"   # 260+ 张 PNG 图片，无需分析
+    - "src/main/res/raw/**"        # 音频资源文件
+    - "libs/**"                    # 二进制 JAR，无法分析
+    - "app/src/**"                  # app 模块源码目录实际为空
+    - ".gradle/**"
+    - "build/**"
+    - "r-classes/**"
+    - "bin/**"
+
+# ── RepoWiki 页面规划 ──
+repowiki:
+  template: architecture
+
+  notes:
+    - text: >
+        本项目是铁锈战争 (Rusted Warfare) 的逆向重建工程，
+        基于混淆后的 class 文件反编译，大量类名仍为单字母混淆名（如 a, b, c...）。
+        TODO 文件中记录了混淆名到语义名的映射关系，是理解代码的关键参考。
+    - text: >
+        项目采用双平台架构：根模块 (src/main/java) 包含共享游戏逻辑 + PC 专用代码，
+        app 子模块通过 sourceSets exclude 排除 PC 专用包（librocket、rts/java、codedisaster）来构建 Android 版。
+    - text: >
+        PC 端构建使用根 build.gradle 的 java + shadow 插件，
+        依赖 libs/ 目录下的 LWJGL、Slick2D 等桌面库（compileOnly 模式）。
+        运行时需要原生 DLL/SO（lwjgl natives）。
+    - text: >
+        Android stub 类（android.* 包）位于 src/main/java/android/，
+        是手写的最小化桩实现，用于让 PC 端编译通过引用了 Android API 的共享代码。
+    - text: >
+        包名 com.corrodinggames.rts 是铁锈战争的核心命名空间，
+        子包 game/ 为游戏逻辑，gameFramework/ 为引擎框架层，
+        java/ 为 PC 桌面启动器，appFramework/ 为应用框架桥接层。
+
+  documents:
+    - title: 项目总览与双平台架构
+      goal: 概述项目结构、构建体系、PC/Android 分流策略
+      parent: ""
+      hints: "参考 build.gradle、settings.gradle、app/build.gradle 的 sourceSets 配置"
+
+    - title: 游戏引擎框架层 (gameFramework)
+      goal: 分析 gameFramework 包下的渲染、音频、存储、网络、命令队列等子系统
+      parent: ""
+      hints: "重点关注 sound/、storage/、effect/、utility/ 等语义化子包，以及 b/ 下的着色器系统"
+
+    - title: 游戏逻辑层 (game)
+      goal: 分析游戏单位系统、战斗逻辑、AI、地图触发器等核心玩法
+      parent: ""
+      hints: "units/ 子包为单位定义，game/a/ 和 game/b/ 可能是核心游戏状态管理"
+
+    - title: PC 桌面启动与 LWJGL 集成
+      goal: 分析 rts/java/ 包下的桌面启动器、Slick2D 游戏循环、LWJGL 渲染管线
+      parent: ""
+      hints: "重点关注 java/audio/、java/debuger/ 等子包以及 librocket/ UI 集成"
+
+    - title: 网络与多人联机 (RUDP + Steam)
+      goal: 分析 test/rudp/ 可靠 UDP 协议实现和 codedisaster/steamworks/ Steam 集成
+      parent: ""
+      hints: "rudp 包含完整的可靠传输协议栈（packet/、重传、拥塞控制）"
+
+    - title: Android 桩实现与跨平台桥接
+      goal: 分析手写 Android stub 类的覆盖范围和桥接策略
+      parent: ""
+      hints: "android/ 包下包含 Activity、Context、Bitmap、Canvas、Paint 等最小化桩"
+
+    - title: UI 系统（LibRocket + Android XML）
+      goal: 分析 PC 端 LibRocket HTML/CSS UI 和 Android XML 布局的双轨 UI 架构
+      parent: ""
+      hints: "com/LibRocket.java、com/Element*.java 是 PC UI 核心；src/main/res/layout/ 是 Android UI"
+
+    - title: 资源与本地化体系
+      goal: 分析 drawable/raw/layout/values 资源组织和 Strings.properties 多语言加载
+      parent: ""
+      hints: "关注 src/main/resources/ 下的 locale 文件和 res/values/strings.xml"
+
+# ── 知识卡规划 ──
+knowledgecard:
+  notes:
+    - text: >
+        混淆名映射是本项目最核心的知识资产，
+        TODO 文件中的 mapping（如 gameFramework.a → sound, gameFramework.c → CommandQueue）
+        应作为每个模块知识卡的必备字段。
+    - text: >
+        PC 端构建链路：gradle shadow → fat JAR → 需配合原生 LWJGL natives 运行。
+        build.gradle 使用 compileOnly 引用 libs/，运行时需手动指定 native 路径。
+    - text: >
+        双平台分流规则：librocket/、rts/java/、codedisaster/ 三个包是 PC 专用，
+        Android 构建通过 sourceSets exclude 排除。共享代码不能引用这些包。
+    - text: >
+        项目 Java 版本策略：编译目标 Java 8（Android 兼容），
+        但构建工具链需要 JDK 11+（Gradle 8.11.1 要求）。

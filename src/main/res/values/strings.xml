@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<resources>
+    <string name="onscreenlocationaction_prompt">Action Location</string>
+    <string name="onscreenlocationdpad_prompt">Dpad Location</string>
+    <string name="aidifficulty_prompt">AI Difficulty</string>
+    <string name="setTeams_prompt">Set Teams</string>
+    <string name="unitcap_prompt">Unit Cap</string>
+    <string name="fog_prompt">Fog Mode</string>
+    <string name="credits_prompt">Starting Credits</string>
+    <string name="income_prompt">Income Multiplier</string>
+    <string name="startingUnits_prompt">Starting Units</string>
+    <string name="skirmish_game_mode_prompt">Game Mode</string>
+    <string name="skirmish_ai_count_prompt">Number of AIs</string>
+    <string name="spawn_array_prompt">Spawn point</string>
+    <string name="team_array_prompt">Team</string>
+    <string name="storageType_prompt">Storage Mode</string>
+    <string name="app_name">Rusted Warfare</string>
+</resources>

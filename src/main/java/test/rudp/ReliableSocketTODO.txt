@@ -1,0 +1,1246 @@
+package test.rudp;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.c;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Random;
+
+import test.rudp.packet.ACKPacket;
+import test.rudp.packet.DATPacket;
+import test.rudp.packet.EAKPacket;
+import test.rudp.packet.FINPacket;
+import test.rudp.packet.NullPacket;
+import test.rudp.packet.RSTPacket;
+import test.rudp.packet.SYNPacket;
+
+public class ReliableSocket extends Socket {
+   protected c c;
+   protected SocketAddress d;
+   protected SocketInputStream inputStream;
+   protected SocketOutputStream outputStream;
+   private byte[] receiveBuffer;
+   private boolean closed;
+   private boolean connected;
+   private boolean outputBlocked;
+   private boolean keepAlive;
+   private int state;
+   private int soTimeout;
+   private boolean inputShutdown;
+   private boolean outputShutdown;
+   private int previousState;
+   private Object closeLock;
+   private Object outputLock;
+   private ArrayList<RetransmissionListener> retransmissionListeners;
+   private ArrayList<SocketStateListener> stateListeners;
+   protected RUDPConfig config;
+   private ArrayList<RUDPPacket> outstandingPackets;
+   private ArrayList<RUDPPacket> outOfSequencePackets;
+   private ArrayList<RUDPPacket> receivedPackets;
+   private Object inputLock;
+   private SequenceManager sequenceManager;
+   private Thread receiverThread;
+   private int maxOutstandingPackets;
+   private int maxReceivedPackets;
+   private int sendBufferSize;
+   private int receiveBufferSize;
+   public boolean schedulersStarted;
+   private test.rudp.packet.TaskScheduler nullSegmentTimer;
+   private test.rudp.packet.TaskScheduler retransmissionTimer;
+   private test.rudp.packet.TaskScheduler cumulativeAckTimer;
+   private test.rudp.packet.TaskScheduler keepAliveTimer;
+   private static final boolean DEBUG = Boolean.getBoolean("net.rudp.debug");
+
+   public ReliableSocket() throws SocketException {
+      this(new RUDPConfig());
+   }
+
+   public ReliableSocket(RUDPConfig config) throws SocketException {
+      this(new c(), config);
+   }
+
+   protected ReliableSocket(c c) {
+      this(c, new RUDPConfig());
+   }
+
+   protected ReliableSocket(c c, RUDPConfig config) {
+      this.closed = false;
+      this.connected = false;
+      this.outputBlocked = false;
+      this.keepAlive = true;
+      this.state = 0;
+      this.soTimeout = 0;
+      this.inputShutdown = false;
+      this.outputShutdown = false;
+      this.previousState = -1;
+      this.closeLock = new Object();
+      this.outputLock = new Object();
+      this.retransmissionListeners = new ArrayList<>();
+      this.stateListeners = new ArrayList<>();
+      this.config = RUDPConfig.DEFAULT;
+      this.outstandingPackets = new ArrayList<>();
+      this.outOfSequencePackets = new ArrayList<>();
+      this.receivedPackets = new ArrayList<>();
+      this.inputLock = new Object();
+      this.sequenceManager = new SequenceManager();
+      this.maxOutstandingPackets = 32;
+      this.maxReceivedPackets = 32;
+      this.schedulersStarted = false;
+      this.nullSegmentTimer = new test.rudp.packet.TaskScheduler("rudp-NullSegmentTimer", new NullSegmentTimerTask(this, null));
+      this.retransmissionTimer = new test.rudp.packet.TaskScheduler("rudp-RetransmissionTimer", new RetransmissionTimerTask(this, null));
+      this.cumulativeAckTimer = new test.rudp.packet.TaskScheduler("rudp-CumulativeAckTimer", new CumulativeAckTimerTask(this, null));
+      this.keepAliveTimer = new test.rudp.packet.TaskScheduler("rudp-KeepAliveTimer", new KeepAliveTimerTask(this, null));
+      if (c == null) {
+         throw new NullPointerException("sock");
+      } else {
+         this.initialize(c, config);
+      }
+   }
+
+   protected void initialize(c c, RUDPConfig config) {
+      this.c = c;
+      this.config = config;
+      this.sendBufferSize = (this.config.getMaxSegmentSize() - 6) * 32;
+      this.receiveBufferSize = (this.config.getMaxSegmentSize() - 6) * 32;
+      if (this.receiverThread == null) {
+         this.receiverThread = new PacketReceiverThread(this);
+         this.receiverThread.start();
+      }
+   }
+
+   public void bind(SocketAddress address) {
+      try {
+         this.c.bind(address);
+      } catch (SocketException e) {
+         e.printStackTrace();
+      }
+   }
+
+   public void connect(SocketAddress address) {
+      try {
+         this.connect(address, 0);
+      } catch (SocketException e) {
+         e.printStackTrace();
+      } catch (SocketTimeoutException e) {
+         e.printStackTrace();
+      }
+   }
+
+   public void connect(SocketAddress address, int timeout) throws SocketException, SocketTimeoutException {
+      if (address == null) {
+         throw new IllegalArgumentException("connect: The address can't be null");
+      } else if (timeout < 0) {
+         throw new IllegalArgumentException("connect: timeout can't be negative");
+      } else if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (this.isConnected()) {
+         throw new SocketException("already connected");
+      } else if (!(address instanceof InetSocketAddress)) {
+         throw new IllegalArgumentException("Unsupported address type");
+      } else {
+         this.d = (InetSocketAddress) address;
+         this.startSchedulers();
+         this.state = 2; // CONNECTING
+         Random random = new Random(System.currentTimeMillis());
+         SYNPacket synPacket = new SYNPacket(this.sequenceManager.generateSequenceNumber(random.nextInt(255)), 
+               this.config.getMaxOutstandingSegments(), this.config.getMaxSegmentSize(), 
+               this.config.getMaxOutOfSequence(), this.config.getMaxAutoReset(), 
+               this.config.getNullSegmentTimeout(), this.config.getRetransmitTimeout(), 
+               this.config.getMaxCumulativeAcks(), this.config.getMaxRetransmitTime());
+         this.sendPacket((RUDPPacket) synPacket);
+         boolean timeoutOccurred = false;
+         synchronized (this) {
+            if (!this.isConnected()) {
+               try {
+                  if (timeout == 0) {
+                     this.wait();
+                  } else {
+                     long startTime = System.currentTimeMillis();
+                     this.wait((long) timeout);
+                     if (System.currentTimeMillis() - startTime >= (long) timeout) {
+                        timeoutOccurred = true;
+                     }
+                  }
+               } catch (InterruptedException interruptedException) {
+                  interruptedException.printStackTrace();
+               }
+            }
+         }
+
+         if (this.state != 3) { // CONNECTED
+            synchronized (this.outstandingPackets) {
+               this.outstandingPackets.clear();
+               this.outstandingPackets.notifyAll();
+            }
+
+            this.sequenceManager.reset();
+            this.retransmissionTimer.cancel();
+            switch (this.state) {
+               case 0: // CLOSED
+               case 4: // CLOSING
+                  this.state = 0;
+                  throw new SocketException("Socket closed");
+               case 1: // LISTENING
+               case 3: // CONNECTED
+               default:
+                  return;
+               case 2: // CONNECTING
+                  this.notifyConnectionRefused();
+                  this.state = 0;
+                  if (timeoutOccurred) {
+                     throw new SocketTimeoutException();
+                  } else {
+                     throw new SocketException("Connection refused");
+                  }
+            }
+         }
+      }
+   }
+
+   public SocketChannel getChannel() {
+      return null;
+   }
+
+   public InetAddress getInetAddress() {
+      return !this.isConnected() ? null : ((InetSocketAddress) this.d).getAddress();
+   }
+
+   public int getPort() {
+      return !this.isConnected() ? 0 : ((InetSocketAddress) this.d).getPort();
+   }
+
+   public SocketAddress getRemoteSocketAddress() {
+      return !this.isConnected() ? null : new InetSocketAddress(this.getInetAddress(), this.getPort());
+   }
+
+   public SocketAddress getd() {
+      return this.d;
+   }
+
+   public InetAddress getLocalAddress() {
+      return this.c.getLocalAddress();
+   }
+
+   public int getLocalPort() {
+      return this.c.getLocalPort();
+   }
+
+   public SocketAddress getLocalSocketAddress() {
+      return this.c.getLocalSocketAddress();
+   }
+
+   public synchronized InputStream getInputStream() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         throw new SocketException("Socket is not connected");
+      } else if (this.isInputShutdown()) {
+         throw new SocketException("Socket input is shutdown");
+      } else {
+         if (this.inputStream == null) {
+            this.inputStream = new SocketInputStream(this);
+         }
+
+         return this.inputStream;
+      }
+   }
+
+   public synchronized OutputStream getOutputStream() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         throw new SocketException("Socket is not connected");
+      } else if (this.isOutputShutdown()) {
+         throw new SocketException("Socket output is shutdown");
+      } else {
+         if (this.outputStream == null) {
+            this.outputStream = new SocketOutputStream(this);
+         }
+
+         return this.outputStream;
+      }
+   }
+
+   public void forceClose() {
+      this.closed = true;
+      this.state = 0;
+      this.c.close();
+   }
+
+   public synchronized void close() {
+      synchronized (this.closeLock) {
+         if (!this.isClosed()) {
+            this.stopSchedulers();
+            switch (this.state) {
+               case 0: // CLOSED
+                  this.c.close();
+                  break;
+               case 1: // LISTENING
+               case 3: // CONNECTED
+               case 4: // CLOSING
+                  this.sendPacket((RUDPPacket) (new FINPacket(this.sequenceManager.getCurrentSequenceNumber())));
+                  this.initiateClose();
+                  break;
+               case 2: // CONNECTING
+                  synchronized (this) {
+                     this.notify();
+                  }
+            }
+
+            if (this.state != 0) {
+               this.previousState = this.state;
+            }
+
+            this.closed = true;
+            this.state = 0;
+            this.notifyClosed();
+            synchronized (this.outstandingPackets) {
+               this.outstandingPackets.notify();
+            }
+
+            synchronized (this.receivedPackets) {
+               this.receivedPackets.notify();
+            }
+         }
+      }
+   }
+
+   public boolean isBound() {
+      return this.c.isBound();
+   }
+
+   public boolean isConnected() {
+      return this.connected;
+   }
+
+   public boolean isClosed() {
+      synchronized (this.closeLock) {
+         return this.closed;
+      }
+   }
+
+   public void setSoTimeout(int timeout) {
+      if (timeout < 0) {
+         throw new IllegalArgumentException("timeout < 0");
+      } else {
+         this.soTimeout = timeout;
+      }
+   }
+
+   public synchronized void setSendBufferSize(int size) throws SocketException {
+      if (size <= 0) {
+         throw new IllegalArgumentException("negative receive size");
+      } else if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         this.sendBufferSize = size;
+      }
+   }
+
+   public synchronized int getSendBufferSize() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else {
+         return this.sendBufferSize;
+      }
+   }
+
+   public synchronized void setReceiveBufferSize(int size) throws SocketException {
+      if (size <= 0) {
+         throw new IllegalArgumentException("negative send size");
+      } else if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         this.receiveBufferSize = size;
+      }
+   }
+
+   public synchronized int getReceiveBufferSize() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else {
+         return this.receiveBufferSize;
+      }
+   }
+
+   public void setTcpNoDelay(boolean on) {
+      // Not supported in RUDP
+   }
+
+   public boolean getTcpNoDelay() {
+      return false; // Not supported in RUDP
+   }
+
+   public synchronized void setKeepAlive(boolean on) throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (this.keepAlive ^ on) {
+         this.keepAlive = on;
+         if (this.isConnected()) {
+            if (this.keepAlive) {
+               this.keepAliveTimer.schedule((long) (this.config.getNullSegmentTimeout() * 6), 
+                     (long) (this.config.getNullSegmentTimeout() * 6));
+            } else {
+               this.keepAliveTimer.cancel();
+            }
+         }
+      }
+   }
+
+   public synchronized boolean getKeepAlive() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else {
+         return this.keepAlive;
+      }
+   }
+
+   public void shutdownInput() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         throw new SocketException("Socket is not connected");
+      } else if (this.isInputShutdown()) {
+         throw new SocketException("Socket input is already shutdown");
+      } else {
+         this.inputShutdown = true;
+         synchronized (this.inputLock) {
+            this.inputLock.notify();
+         }
+      }
+   }
+
+   public void shutdownOutput() throws SocketException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (!this.isConnected()) {
+         throw new SocketException("Socket is not connected");
+      } else if (this.isOutputShutdown()) {
+         throw new SocketException("Socket output is already shutdown");
+      } else {
+         this.outputShutdown = true;
+         synchronized (this.outstandingPackets) {
+            this.outstandingPackets.notifyAll();
+         }
+      }
+   }
+
+   public boolean isInputShutdown() {
+      return this.inputShutdown;
+   }
+
+   public boolean isOutputShutdown() {
+      return this.outputShutdown;
+   }
+
+   protected void sendData(byte[] data, int offset, int length) {
+      try {
+         this.sendData(data, offset, length, false);
+      } catch (IOException e) {
+         e.printStackTrace();
+      }
+   }
+
+   public void sendData(byte[] data, int offset, int length, boolean immediate) throws IOException {
+      if (this.isClosed()) {
+         throw new SocketException("Socket is closed");
+      } else if (this.isOutputShutdown()) {
+         throw new IOException("Socket output is shutdown");
+      } else if (!this.isConnected()) {
+         throw new SocketException("Connection reset");
+      } else {
+         int sent = 0;
+
+         while (sent < length) {
+            synchronized (this.outputLock) {
+               while (this.outputBlocked) {
+                  try {
+                     this.outputLock.wait();
+                  } catch (InterruptedException interruptedException) {
+                     interruptedException.printStackTrace();
+                  }
+               }
+
+               int segmentSize = Math.min(this.config.getMaxSegmentSize() - 6, length - sent);
+               DATPacket dataPacket = new DATPacket(this.sequenceManager.getCurrentSequenceNumber(), 
+                     this.sequenceManager.getNextSequenceNumber(), data, offset + sent, segmentSize);
+               this.sendPacket((RUDPPacket) dataPacket);
+               if (immediate) {
+                  this.acknowledgePacket((RUDPPacket) dataPacket);
+               }
+
+               sent += segmentSize;
+            }
+         }
+      }
+   }
+
+   protected int receiveData(byte[] buffer, int offset, int length) throws IOException {
+      int received = 0;
+      synchronized (this.inputLock) {
+         while (true) {
+            while (!this.receivedPackets.isEmpty()) {
+               Iterator<RUDPPacket> iterator = this.receivedPackets.iterator();
+
+               while (iterator.hasNext()) {
+                  RUDPPacket packet = iterator.next();
+                  if (packet instanceof RSTPacket) {
+                     iterator.remove();
+                     break;
+                  }
+
+                  if (packet instanceof FINPacket) {
+                     if (received <= 0) {
+                        iterator.remove();
+                        return -1;
+                     }
+                     break;
+                  }
+
+                  if (packet instanceof DATPacket) {
+                     byte[] payload = ((DATPacket) packet).getPayload();
+                     if (payload.length + received > length) {
+                        if (received <= 0) {
+                           throw new IOException("insufficient buffer space");
+                        }
+                        break;
+                     }
+
+                     System.arraycopy(payload, 0, buffer, offset + received, payload.length);
+                     received += payload.length;
+                     iterator.remove();
+                  }
+               }
+
+               if (received > 0) {
+                  return received;
+               }
+            }
+
+            if (this.isClosed()) {
+               throw new SocketException("Socket is closed");
+            }
+
+            if (this.isInputShutdown()) {
+               throw new EOFException();
+            }
+
+            if (!this.isConnected()) {
+               throw new SocketException("Connection reset");
+            }
+
+            try {
+               if (this.soTimeout == 0) {
+                  this.inputLock.wait();
+               } else {
+                  long startTime = System.currentTimeMillis();
+                  this.inputLock.wait((long) this.soTimeout);
+                  if (System.currentTimeMillis() - startTime >= (long) this.soTimeout) {
+                     throw new SocketTimeoutException();
+                  }
+               }
+            } catch (InterruptedException interruptedException) {
+               if (DEBUG) {
+                  interruptedException.printStackTrace();
+               }
+            }
+         }
+      }
+   }
+
+   public void addStateListener(SocketStateListener listener) {
+      if (listener == null) {
+         throw new NullPointerException("stateListener");
+      } else {
+         synchronized (this.stateListeners) {
+            if (!this.stateListeners.contains(listener)) {
+               this.stateListeners.add(listener);
+            }
+         }
+      }
+   }
+
+   private void acknowledgePacket(RUDPPacket packet) {
+      if (packet instanceof DATPacket || packet instanceof RSTPacket || packet instanceof FINPacket
+            || packet instanceof NullPacket) {
+         this.setAckNumber(packet);
+      }
+
+      if (packet instanceof DATPacket || packet instanceof RSTPacket || packet instanceof FINPacket) {
+         this.nullSegmentTimer.pause();
+      }
+
+      if (DEBUG) {
+         this.log("sent " + packet);
+      }
+
+      this.sendDatagram(packet);
+   }
+
+   private RUDPPacket receivePacket() {
+      RUDPPacket packet;
+      if ((packet = this.readPacket()) != null) {
+         if (DEBUG) {
+            this.log("recv " + packet);
+         }
+
+         if (packet instanceof DATPacket || packet instanceof NullPacket || packet instanceof RSTPacket
+               || packet instanceof FINPacket || packet instanceof SYNPacket) {
+            this.sequenceManager.updateLastActivity();
+         }
+
+         if (this.keepAlive) {
+            this.keepAliveTimer.pause();
+         }
+      }
+
+      return packet;
+   }
+
+   private void sendPacket(RUDPPacket packet) throws SocketException {
+      synchronized (this.outstandingPackets) {
+         while (this.outstandingPackets.size() >= this.maxOutstandingPackets || 
+                this.sequenceManager.getOutstandingCount() > this.config.getMaxOutstandingSegments()) {
+            if (this.closed) {
+               throw new SocketException("Socket is closed");
+            }
+
+            try {
+               this.outstandingPackets.wait(10000L);
+            } catch (InterruptedException interruptedException) {
+               interruptedException.printStackTrace();
+            }
+         }
+
+         this.sequenceManager.incrementOutstanding();
+         this.outstandingPackets.add(packet);
+      }
+
+      if (this.closed) {
+         throw new SocketException("Socket is closed");
+      } else {
+         if (!(packet instanceof EAKPacket) && !(packet instanceof ACKPacket)) {
+            synchronized (this.retransmissionTimer) {
+               if (this.retransmissionTimer.isIdle()) {
+                  this.retransmissionTimer.schedule((long) this.config.getRetransmitTimeout(), 
+                        (long) this.config.getRetransmitTimeout());
+               }
+            }
+         }
+
+         this.acknowledgePacket(packet);
+         if (packet instanceof DATPacket) {
+            synchronized (this.retransmissionListeners) {
+               Iterator<RetransmissionListener> iterator = this.retransmissionListeners.iterator();
+
+               while (iterator.hasNext()) {
+                  RetransmissionListener listener = iterator.next();
+                  listener.onPacketSent();
+               }
+            }
+         }
+      }
+   }
+
+   private void retransmitPacket(RUDPPacket packet) {
+      if (this.config.getMaxRetransmitTime() > 0) {
+         packet.setRetransmitCount((packet.getRetransmitCount() + 1));
+      }
+
+      if (this.config.getMaxRetransmitTime() != 0 && packet.getRetransmitCount() > this.config.getMaxRetransmitTime()) {
+         this.handleConnectionReset();
+      } else {
+         this.acknowledgePacket(packet);
+         if (packet instanceof DATPacket) {
+            synchronized (this.retransmissionListeners) {
+               Iterator<RetransmissionListener> iterator = this.retransmissionListeners.iterator();
+
+               while (iterator.hasNext()) {
+                  RetransmissionListener listener = iterator.next();
+                  listener.onPacketRetransmitted();
+               }
+            }
+         }
+      }
+   }
+
+   private void handleConnectionEstablished() {
+      if (this.isConnected()) {
+         this.nullSegmentTimer.cancel();
+         if (this.keepAlive) {
+            this.keepAliveTimer.cancel();
+         }
+
+         synchronized (this.outputLock) {
+            this.outputBlocked = false;
+            this.outputLock.notify();
+         }
+      } else {
+         synchronized (this) {
+            this.startSchedulers();
+            this.connected = true;
+            this.state = 3; // CONNECTED
+            this.notify();
+         }
+
+         synchronized (this.stateListeners) {
+            Iterator<SocketStateListener> iterator = this.stateListeners.iterator();
+
+            while (iterator.hasNext()) {
+               SocketStateListener listener = iterator.next();
+               listener.onConnected(this);
+            }
+         }
+      }
+
+      this.nullSegmentTimer.schedule(0L, (long) this.config.getNullSegmentTimeout());
+      if (this.keepAlive) {
+         this.keepAliveTimer.schedule((long) (this.config.getNullSegmentTimeout() * 6), 
+               (long) (this.config.getNullSegmentTimeout() * 6));
+      }
+   }
+
+   private void notifyConnectionRefused() {
+      synchronized (this.stateListeners) {
+         Iterator<SocketStateListener> iterator = this.stateListeners.iterator();
+
+         while (iterator.hasNext()) {
+            SocketStateListener listener = iterator.next();
+            listener.onConnectionRefused(this);
+         }
+      }
+   }
+
+   private void notifyClosed() {
+      synchronized (this.stateListeners) {
+         Iterator<SocketStateListener> iterator = this.stateListeners.iterator();
+
+         while (iterator.hasNext()) {
+            SocketStateListener listener = iterator.next();
+            listener.onClosed(this);
+         }
+      }
+   }
+
+   private void handleConnectionReset() {
+      synchronized (this.closeLock) {
+         if (this.isClosed()) {
+            return;
+         }
+
+         switch (this.state) {
+            case 1: // LISTENING
+            case 3: // CONNECTED
+            case 4: // CLOSING
+               this.connected = false;
+               synchronized (this.outstandingPackets) {
+                  this.outstandingPackets.notifyAll();
+               }
+
+               synchronized (this.inputLock) {
+                  this.inputLock.notify();
+               }
+
+               this.initiateClose();
+               break;
+            case 2: // CONNECTING
+               synchronized (this) {
+                  this.notify();
+               }
+         }
+
+         this.state = 0;
+         this.closed = true;
+      }
+
+      synchronized (this.stateListeners) {
+         Iterator<SocketStateListener> iterator = this.stateListeners.iterator();
+
+         while (iterator.hasNext()) {
+            SocketStateListener listener = iterator.next();
+            listener.onReset(this);
+         }
+      }
+   }
+
+   private void notifyKeepAliveTimeout() {
+      synchronized (this.stateListeners) {
+         Iterator<SocketStateListener> iterator = this.stateListeners.iterator();
+
+         while (iterator.hasNext()) {
+            SocketStateListener listener = iterator.next();
+            listener.onKeepAliveTimeout(this);
+         }
+      }
+   }
+
+   protected void handleSYNPacket(SYNPacket synPacket) throws SocketException {
+      switch (this.state) {
+         case 0: // CLOSED
+            this.state = 1; // LISTENING
+            this.config = new RUDPConfig(this.maxOutstandingPackets, this.maxReceivedPackets, 
+                  synPacket.getWindowSize(), synPacket.getConnectionId(), synPacket.getMaxOutOfSequence(),
+                  synPacket.getMaxAutoReset(), synPacket.getNullSegmentTimeout(), synPacket.getRetransmitTimeout(),
+                  synPacket.getMaxCumulativeAcks(), synPacket.getMaxOutstandingSegments(), 
+                  synPacket.getMaxRetransmitTime());
+            this.sequenceManager.setInitialSequence(synPacket.getSequenceNumber());
+            Random random = new Random(System.currentTimeMillis());
+            SYNPacket responseSyn = new SYNPacket(this.sequenceManager.generateSequenceNumber(random.nextInt(255)), 
+                  this.config.getMaxOutstandingSegments(), this.config.getMaxSegmentSize(), 
+                  this.config.getMaxOutOfSequence(), this.config.getMaxAutoReset(), 
+                  this.config.getNullSegmentTimeout(), this.config.getRetransmitTimeout(), 
+                  this.config.getMaxCumulativeAcks(), this.config.getMaxRetransmitTime());
+            responseSyn.setAckNumber(synPacket.getSequenceNumber());
+            this.sendPacket((RUDPPacket) responseSyn);
+            break;
+         case 1: // LISTENING
+            synchronized (this.outstandingPackets) {
+               Iterator<RUDPPacket> iterator = this.outstandingPackets.iterator();
+
+               while (iterator.hasNext()) {
+                  RUDPPacket packet = iterator.next();
+                  this.retransmitPacket(packet);
+               }
+            }
+            return;
+         case 2: // CONNECTING
+            this.sequenceManager.setInitialSequence(synPacket.getSequenceNumber());
+            this.state = 3; // CONNECTED
+            this.sendAcknowledgment();
+            this.handleConnectionEstablished();
+      }
+   }
+
+   private void handleEAKPacket(EAKPacket eakPacket) {
+      int[] additionalAcks = eakPacket.getAdditionalAcks();
+      int baseAck = eakPacket.getAckNumber();
+      int highestAck = additionalAcks[additionalAcks.length - 1];
+      synchronized (this.outstandingPackets) {
+         Iterator<RUDPPacket> iterator = this.outstandingPackets.iterator();
+
+         while (true) {
+            RUDPPacket packet;
+            while (iterator.hasNext()) {
+               packet = iterator.next();
+               if (this.compareSequence(packet.getSequenceNumber(), baseAck) <= 0) {
+                  iterator.remove();
+               } else {
+                  for (int i = 0; i < additionalAcks.length; ++i) {
+                     if (this.compareSequence(packet.getSequenceNumber(), additionalAcks[i]) == 0) {
+                        iterator.remove();
+                        break;
+                     }
+                  }
+               }
+            }
+
+            iterator = this.outstandingPackets.iterator();
+
+            while (iterator.hasNext()) {
+               packet = iterator.next();
+               if (this.compareSequence(baseAck, packet.getSequenceNumber()) < 0 && 
+                   this.compareSequence(highestAck, packet.getSequenceNumber()) > 0) {
+                  this.retransmitPacket(packet);
+               }
+            }
+
+            this.outstandingPackets.notifyAll();
+            return;
+         }
+      }
+   }
+
+   private void processReceivedPacket(RUDPPacket packet) {
+      if (packet instanceof RSTPacket) {
+         synchronized (this.outputLock) {
+            this.outputBlocked = true;
+         }
+
+         this.notifyKeepAliveTimeout();
+      }
+
+      if (packet instanceof FINPacket) {
+         switch (this.state) {
+            case 0: // CLOSED
+               break;
+            case 2: // CONNECTING
+               synchronized (this) {
+                  this.notify();
+                  break;
+               }
+            default:
+               this.state = 4; // CLOSING
+         }
+      }
+
+      boolean inSequence = false;
+      synchronized (this.inputLock) {
+         if (this.compareSequence(packet.getSequenceNumber(), this.sequenceManager.getLastAcknowledged()) > 0) {
+            if (this.compareSequence(packet.getSequenceNumber(), nextSequence(this.sequenceManager.getLastAcknowledged())) == 0) {
+               inSequence = true;
+               if (this.receivedPackets.size() == 0 || this.receivedPackets.size() + this.outOfSequencePackets.size() < this.maxReceivedPackets) {
+                  this.sequenceManager.setLastAcknowledged(packet.getSequenceNumber());
+                  if (packet instanceof DATPacket || packet instanceof RSTPacket || packet instanceof FINPacket) {
+                     this.receivedPackets.add(packet);
+                  }
+
+                  if (packet instanceof DATPacket) {
+                     synchronized (this.retransmissionListeners) {
+                        Iterator<RetransmissionListener> iterator = this.retransmissionListeners.iterator();
+
+                        while (iterator.hasNext()) {
+                           RetransmissionListener listener = iterator.next();
+                           listener.onPacketReceived();
+                        }
+                     }
+                  }
+
+                  this.processOutOfSequencePackets();
+               }
+            } else if (this.receivedPackets.size() + this.outOfSequencePackets.size() < this.maxReceivedPackets) {
+               boolean inserted = false;
+
+               for (int i = 0; i < this.outOfSequencePackets.size() && !inserted; ++i) {
+                  RUDPPacket existingPacket = this.outOfSequencePackets.get(i);
+                  int comparison = this.compareSequence(packet.getSequenceNumber(), existingPacket.getSequenceNumber());
+                  if (comparison == 0) {
+                     inserted = true;
+                  } else if (comparison < 0) {
+                     this.outOfSequencePackets.add(i, packet);
+                     inserted = true;
+                  }
+               }
+
+               if (!inserted) {
+                  this.outOfSequencePackets.add(packet);
+               }
+
+               this.sequenceManager.incrementOutOfSequence();
+               if (packet instanceof DATPacket) {
+                  synchronized (this.retransmissionListeners) {
+                     Iterator<RetransmissionListener> iterator = this.retransmissionListeners.iterator();
+
+                     while (iterator.hasNext()) {
+                        RetransmissionListener listener = iterator.next();
+                        listener.onOutOfSequencePacket();
+                     }
+                  }
+               }
+            }
+         }
+
+         if (inSequence && (packet instanceof RSTPacket || packet instanceof NullPacket || packet instanceof FINPacket)) {
+            this.sendAcknowledgment();
+         } else if (this.sequenceManager.getOutOfSequenceCount() <= 0 || this.config.getMaxAutoReset() != 0 && this.sequenceManager.getOutOfSequenceCount() <= this.config.getMaxAutoReset()) {
+            if (this.sequenceManager.getCumulativeAckCount() > 0 && (this.config.getMaxCumulativeAcks() == 0 || this.sequenceManager.getCumulativeAckCount() > this.config.getMaxCumulativeAcks())) {
+               this.sendSelectiveAcknowledgment();
+            } else {
+               synchronized (this.cumulativeAckTimer) {
+                  if (this.cumulativeAckTimer.isIdle()) {
+                     this.cumulativeAckTimer.schedule((long) this.config.getMaxCumulativeAcks());
+                  }
+               }
+            }
+         } else {
+            this.sendExtendedAcknowledgment();
+         }
+      }
+   }
+
+   private void sendAcknowledgment() {
+      synchronized (this.inputLock) {
+         if (!this.outOfSequencePackets.isEmpty()) {
+            this.sendExtendedAcknowledgment();
+         } else {
+            this.sendSelectiveAcknowledgment();
+         }
+      }
+   }
+
+   private void sendExtendedAcknowledgment() {
+      synchronized (this.inputLock) {
+         if (!this.outOfSequencePackets.isEmpty()) {
+            this.sequenceManager.resetCumulativeAck();
+            this.sequenceManager.resetOutOfSequence();
+            int[] sequenceNumbers = new int[this.outOfSequencePackets.size()];
+
+            int i;
+            for (i = 0; i < sequenceNumbers.length; ++i) {
+               RUDPPacket packet = this.outOfSequencePackets.get(i);
+               sequenceNumbers[i] = packet.getSequenceNumber();
+            }
+
+            i = this.sequenceManager.getLastAcknowledged();
+            this.sendPacket((RUDPPacket) (new EAKPacket(nextSequence(i), i, sequenceNumbers)));
+         }
+      }
+   }
+
+   private void sendSelectiveAcknowledgment() {
+      if (this.sequenceManager.getCumulativeAckCount() != 0) {
+         int lastAck = this.sequenceManager.getLastAcknowledged();
+         this.sendPacket((RUDPPacket) (new ACKPacket(nextSequence(lastAck), lastAck)));
+      }
+   }
+
+   private void setAckNumber(RUDPPacket packet) {
+      if (this.sequenceManager.getCumulativeAckCount() != 0) {
+         packet.setAckNumber(this.sequenceManager.getLastAcknowledged());
+      }
+   }
+
+   protected boolean hasOutstandingPackets(RUDPPacket packet) {
+      int ackNumber = packet.getAckNumber();
+      if (ackNumber < 0) {
+         return false;
+      } else {
+         Iterator<RUDPPacket> iterator = this.outstandingPackets.iterator();
+
+         RUDPPacket outstandingPacket;
+         do {
+            if (!iterator.hasNext()) {
+               return false;
+            }
+
+            outstandingPacket = iterator.next();
+         } while (this.compareSequence(outstandingPacket.getSequenceNumber(), ackNumber) > 0);
+
+         return true;
+      }
+   }
+
+   protected void processAcknowledgment(RUDPPacket packet) {
+      int ackNumber = packet.getAckNumber();
+      if (ackNumber >= 0) {
+         this.sequenceManager.resetCumulativeAck();
+         synchronized (this.outstandingPackets) {
+            Iterator<RUDPPacket> iterator = this.outstandingPackets.iterator();
+
+            while (iterator.hasNext()) {
+               RUDPPacket outstandingPacket = iterator.next();
+               if (this.compareSequence(outstandingPacket.getSequenceNumber(), ackNumber) <= 0) {
+                  iterator.remove();
+               }
+            }
+
+            if (this.state == 1) { // LISTENING
+               boolean hasSYN = false;
+               if (!this.outstandingPackets.isEmpty()) {
+                  Iterator<RUDPPacket> synIterator = this.outstandingPackets.iterator();
+
+                  while (synIterator.hasNext()) {
+                     RUDPPacket synPacket = synIterator.next();
+                     if (synPacket instanceof SYNPacket) {
+                        hasSYN = true;
+                     }
+                  }
+               }
+
+               if (hasSYN) {
+                  this.log("Bad first ack: " + ackNumber);
+                  return;
+               }
+
+               this.state = 3; // CONNECTED
+               this.handleConnectionEstablished();
+            }
+
+            if (this.outstandingPackets.isEmpty()) {
+               this.retransmissionTimer.cancel();
+            }
+
+            this.outstandingPackets.notifyAll();
+         }
+      }
+   }
+
+   private void processOutOfSequencePackets() {
+      synchronized (this.inputLock) {
+         Iterator<RUDPPacket> iterator = this.outOfSequencePackets.iterator();
+
+         while (true) {
+            RUDPPacket packet;
+            do {
+               if (!iterator.hasNext()) {
+                  this.inputLock.notify();
+                  return;
+               }
+
+               packet = iterator.next();
+            } while (this.compareSequence(packet.getSequenceNumber(), nextSequence(this.sequenceManager.getLastAcknowledged())) != 0);
+
+            this.sequenceManager.setLastAcknowledged(packet.getSequenceNumber());
+            this.receivedPackets.add(packet);
+            iterator.remove();
+            this.sequenceManager.decrementOutOfSequence();
+         }
+      }
+   }
+
+   private void initiateClose() {
+      if (this.state != 0) {
+         this.previousState = this.state;
+      }
+
+      this.state = 4; // CLOSING
+      ClosingThread closingThread = new ClosingThread(this);
+      closingThread.start();
+   }
+
+   private void closec() {
+      this.c.close();
+   }
+
+   private void startSchedulers() {
+      if (!this.schedulersStarted) {
+         this.nullSegmentTimer.schedule((long) this.config.getNullSegmentTimeout(), 
+               (long) this.config.getNullSegmentTimeout());
+         this.cumulativeAckTimer.schedule(0L, (long) this.config.getMaxCumulativeAcks());
+         this.schedulersStarted = true;
+      }
+   }
+
+   private void stopSchedulers() {
+      if (this.schedulersStarted) {
+         this.nullSegmentTimer.cancel();
+         this.retransmissionTimer.cancel();
+         this.cumulativeAckTimer.cancel();
+         this.keepAliveTimer.cancel();
+         this.schedulersStarted = false;
+      }
+   }
+
+   private void sendDatagram(RUDPPacket packet) {
+      try {
+         byte[] data = packet.toByteArray();
+         DatagramPacket datagramPacket = new DatagramPacket(data, data.length);
+         datagramPacket.setSocketAddress(this.d);
+         this.c.send(datagramPacket);
+      } catch (IOException e) {
+         if (DEBUG) {
+            e.printStackTrace();
+         }
+      }
+   }
+
+   private RUDPPacket readPacket() {
+      try {
+         if (this.receiveBuffer == null) {
+            this.receiveBuffer = new byte[this.config.getMaxSegmentSize()];
+         }
+
+         DatagramPacket datagramPacket = new DatagramPacket(this.receiveBuffer, this.receiveBuffer.length);
+         this.c.receive(datagramPacket);
+         if (this.d == null) {
+            this.d = datagramPacket.getSocketAddress();
+         }
+
+         return RUDPPacket.parsePacket(datagramPacket.getData(), datagramPacket.getOffset(), datagramPacket.getLength());
+      } catch (IOException e) {
+         if (DEBUG) {
+            e.printStackTrace();
+         }
+
+         return null;
+      }
+   }
+
+   private int compareSequence(int sequence1, int sequence2) {
+      return this.sequenceManager.compareSequence(sequence1, sequence2);
+   }
+
+   private static int nextSequence(int sequence) {
+      return (sequence + 1) % 256;
+   }
+
+   private void log(String message) {
+      System.out.println("[" + Thread.currentThread().getName() + "] " + message);
+   }
+
+   // Inner classes for timer tasks
+   private class NullSegmentTimerTask implements Runnable {
+      private final ReliableSocket socket;
+
+      private NullSegmentTimerTask(ReliableSocket socket) {
+         this.socket = socket;
+      }
+
+      @Override
+      public void run() {
+         if (this.socket.isConnected() && !this.socket.isClosed()) {
+            this.socket.sendPacket((RUDPPacket) (new NullPacket(this.socket.sequenceManager.getCurrentSequenceNumber())));
+         }
+      }
+   }
+
+   private class RetransmissionTimerTask implements Runnable {
+      private final ReliableSocket socket;
+
+      private RetransmissionTimerTask(ReliableSocket socket) {
+         this.socket = socket;
+      }
+
+      @Override
+      public void run() {
+         synchronized (this.socket.outstandingPackets) {
+            if (!this.socket.outstandingPackets.isEmpty()) {
+               Iterator<RUDPPacket> iterator = this.socket.outstandingPackets.iterator();
+
+               while (iterator.hasNext()) {
+                  RUDPPacket packet = iterator.next();
+                  this.socket.retransmitPacket(packet);
+               }
+            }
+         }
+      }
+   }
+
+   private class CumulativeAckTimerTask implements Runnable {
+      private final ReliableSocket socket;
+
+      private CumulativeAckTimerTask(ReliableSocket socket) {
+         this.socket = socket;
+      }
+
+      @Override
+      public void run() {
+         if (this.socket.isConnected() && !this.socket.isClosed()) {
+            this.socket.sendAcknowledgment();
+         }
+      }
+   }
+
+   private class KeepAliveTimerTask implements Runnable {
+      private final ReliableSocket socket;
+
+      private KeepAliveTimerTask(ReliableSocket socket) {
+         this.socket = socket;
+      }
+
+      @Override
+      public void run() {
+         if (this.socket.isConnected() && !this.socket.isClosed()) {
+            this.socket.notifyKeepAliveTimeout();
+            this.socket.sendPacket((RUDPPacket) (new RSTPacket(this.socket.sequenceManager.getCurrentSequenceNumber())));
+         }
+      }
+   }
+
+   // Socket state constants
+   private static final int CLOSED = 0;
+   private static final int LISTENING = 1;
+   private static final int CONNECTING = 2;
+   private static final int CONNECTED = 3;
+   private static final int CLOSING = 4;
+}
