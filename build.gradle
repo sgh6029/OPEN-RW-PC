@@ -43,6 +43,19 @@ shadowJar {
     mergeServiceFiles()
 }
 
+// 一键运行游戏任务：显式加载 libs/ 下所有 JAR + natives DLL
+task runGame(type: JavaExec) {
+    dependsOn 'classes'
+    mainClass = 'com.corrodinggames.rts.java.Main'
+    classpath = files(
+        sourceSets.main.runtimeClasspath,
+        fileTree(dir: 'libs', include: ['*.jar'], exclude: ['natives-linux.jar'])
+    )
+    jvmArgs "-Djava.library.path=${nativesDir.absolutePath}"
+    workingDir = projectDir
+    standardInput = System.in
+}
+
 // 编译时复制 DLL 到 build 目录
 task copyNatives(type: Copy) {
     from nativesDir
