@@ -980,11 +980,11 @@ public abstract class PlayerTeam
         if (n2 == 3) {
             f2 += 1.5f;
         }
-        // OpenAI 难度使用可配置的收入倍率
+        // OpenAI 难度使用可配置的收入倍率（默认10倍，最高99倍）
         if (n2 == 4) {
             float openAIMult = com.corrodinggames.rts.gameFramework.GameEngine.getInstance().bQ.openAIIncomeMultiplier;
-            if (openAIMult < 0.1f) openAIMult = 1.0f;
-            if (openAIMult > 4.0f) openAIMult = 4.0f;
+            if (openAIMult < 0.1f) openAIMult = 10.0f;
+            if (openAIMult > 99.0f) openAIMult = 99.0f;
             f2 = openAIMult;
         }
         if (f2 < 0.1f) {

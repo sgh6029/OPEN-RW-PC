@@ -2340,6 +2340,8 @@ public class GameLogic
                 try {
                     com.corrodinggames.rts.ai.openai.OpenAIPlayerController.getInstance().tick(var2);
                 } catch (Exception openAIEx) {
+                    System.out.println("[OpenAI] tick error: " + openAIEx.toString());
+                    openAIEx.printStackTrace();
                     com.corrodinggames.rts.gameFramework.GameEngine.a("[OpenAI] tick error: " + openAIEx.toString());
                 }
             }

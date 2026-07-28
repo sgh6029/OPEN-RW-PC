@@ -24,9 +24,9 @@ public class OpenAIClient {
     private float temperature;
     private int maxTokens;
     
-    // 超时设置（毫秒）
-    private static final int CONNECT_TIMEOUT = 30000;
-    private static final int READ_TIMEOUT = 60000;
+    // 超时设置（毫秒）— 120秒，阿里云 DashScope 冷启动较慢
+    private static final int CONNECT_TIMEOUT = 120000;
+    private static final int READ_TIMEOUT = 120000;
     
     private OpenAIClient() {
         // 从 SettingsEngine 加载配置
@@ -41,7 +41,7 @@ public class OpenAIClient {
     }
     
     /**
-     * 从 SettingsEngine 加载配置
+     * 从 SettingsEngine 加载配置（每次都刷新，确保读到最新设置）
      */
     private void loadConfig() {
         GameEngine engine = GameEngine.getInstance();
@@ -62,20 +62,36 @@ public class OpenAIClient {
     }
     
     /**
+     * 强制重新加载配置（从 SettingsEngine 读取最新值）
+     */
+    public void reloadConfig() {
+        loadConfig();
+    }
+    
+    /**
      * 发送聊天请求
      * @param systemPrompt 系统提示词
      * @param userMessage 用户消息（游戏状态）
      * @return AI 回复内容，失败返回 null
      */
     public String chat(String systemPrompt, String userMessage) {
+        // 每次调用前刷新配置，确保读到用户最新设置
+        reloadConfig();
+        
         if (apiKey == null || apiKey.isEmpty()) {
-            GameEngine.log("[OpenAI] API Key 未配置");
+            System.out.println("[OpenAI] API Key 未配置，跳过请求");
             return null;
         }
         
         try {
-            // 构建请求 URL
-            String endpoint = baseUrl.endsWith("/") ? baseUrl + "chat/completions" : baseUrl + "/chat/completions";
+            // 构建请求 URL — 确保 /chat/completions 后缀
+            String base = baseUrl.trim();
+            // 去除末尾多余的 /chat/completions（防止用户重复填写）
+            if (base.endsWith("/chat/completions")) {
+                base = base.substring(0, base.length() - "/chat/completions".length());
+            }
+            String endpoint = base.endsWith("/") ? base + "chat/completions" : base + "/chat/completions";
+            System.out.println("[OpenAI] Request URL: " + endpoint);
             URL url = new URL(endpoint);
             
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -256,6 +272,8 @@ public class OpenAIClient {
      * 检查配置是否有效
      */
     public boolean isConfigured() {
+        // 每次检查前刷新配置，防止初始化时 SettingsEngine 还没加载
+        reloadConfig();
         return apiKey != null && !apiKey.isEmpty() && baseUrl != null && !baseUrl.isEmpty();
     }
     

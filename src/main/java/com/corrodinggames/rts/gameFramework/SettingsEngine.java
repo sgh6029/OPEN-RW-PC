@@ -161,7 +161,7 @@ public class SettingsEngine {
     public float openAITemperature = 0.3f;
     public int openAIMaxTokens = 2048;
     public int openAIThreads = 1;  // AI 并行线程数，默认 1，最大 4
-    public float openAIIncomeMultiplier = 1.0f;  // OpenAI 收入倍率，默认 1.0，最大 4.0
+    public float openAIIncomeMultiplier = 10.0f;  // OpenAI 收入倍率，默认 10.0，最大 99.0
     
     SharedPreferences prefs;
     static SettingsEngine settingsEngine = null;

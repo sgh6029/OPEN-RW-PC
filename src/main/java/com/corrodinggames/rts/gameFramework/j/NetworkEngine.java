@@ -466,7 +466,7 @@ public final class NetworkEngine {
         } else if (var1 == 2) {
             return "Very Hard";
         } else {
-            return var1 == 3 ? "Impossible" : "Unknown";
+            return var1 == 3 ? "Impossible" : (var1 == 4 ? "OpenAI" : "Unknown");
         }
     }
 
