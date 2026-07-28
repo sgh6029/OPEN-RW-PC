@@ -31,6 +31,8 @@ public class OpenAIPlayerController {
     private volatile long stateTimestamp = 0;
     private static final long COOLDOWN_MS = 5000;
     private static final long MAX_RESPONSE_WAIT_MS = 120000;
+    private static final long INITIAL_DELAY_MS = 15000; // 等 15 秒让原版 AI 先造单位
+    private long initTimestamp = 0;
     
     // ========== 线程安全命令队列 ==========
     /**
@@ -65,7 +67,7 @@ public class OpenAIPlayerController {
     // PendingCommand — API 线程 → 主线程 的通信载体
     // ================================================================
     static class PendingCommand {
-        enum Type { MOVE, ATTACK, SIEGE, NUKE, THINK }
+        enum Type { MOVE, ATTACK, SIEGE, NUKE, THINK, BUILD }
         
         final Type type;
         final int teamId;
@@ -118,6 +120,10 @@ public class OpenAIPlayerController {
         
         switch (state) {
             case IDLE:
+                // 初始延迟：等 15 秒让原版 AI 先造单位
+                if (System.currentTimeMillis() - initTimestamp < INITIAL_DELAY_MS) {
+                    break;
+                }
                 state = State.WAITING_RESPONSE;
                 stateTimestamp = now;
                 performAITick();
@@ -184,6 +190,47 @@ public class OpenAIPlayerController {
                 // THINK 已在 API 线程发到聊天栏，这里不重复
                 break;
                 
+            case BUILD: {
+                String typeName = cmd.unitType != null ? cmd.unitType : "";
+                int count = cmd.count;
+                com.corrodinggames.rts.game.units.UnitType buildType = resolveUnitType(typeName);
+                if (buildType == null) {
+                    System.out.println("[OpenAI] BUILD: unknown type '" + typeName + "', skipping");
+                    break;
+                }
+                boolean isBuilding = buildType.j();
+                if (isBuilding) {
+                    List<BaseUnit> builders = findUnitsByTypeSafe(cmd.teamId, "builder");
+                    builders.addAll(findUnitsByTypeSafe(cmd.teamId, "engineer"));
+                    System.out.println("[OpenAI] BUILD building '" + typeName + "' x" + count + ", found " + builders.size() + " builders");
+                    for (int i = 0; i < Math.min(builders.size(), count); i++) {
+                        BaseUnit builder = builders.get(i);
+                        if (!validateUnit(builder, cmd.teamId)) continue;
+                        float bx = builder.posX + (i % 4) * 80 - 120;
+                        float by = builder.posY + (i / 4) * 80;
+                        com.corrodinggames.rts.gameFramework.GameCommand gc = engine.cf.a(team);
+                        gc.a(builder);
+                        gc.a(bx, by, buildType, 1);
+                        System.out.println("[OpenAI] Builder " + builder.bs + " building " + typeName + " at (" + (int)bx + "," + (int)by + ")");
+                    }
+                    GameEngine.f("AI", "Building " + count + "x " + typeName);
+                } else {
+                    String factoryType = getFactoryForUnit(typeName);
+                    List<BaseUnit> factories = findUnitsByTypeSafe(cmd.teamId, factoryType);
+                    System.out.println("[OpenAI] BUILD unit '" + typeName + "' x" + count + ", found " + factories.size() + " " + factoryType + "s");
+                    for (int i = 0; i < Math.min(factories.size(), count); i++) {
+                        BaseUnit factory = factories.get(i);
+                        if (!validateUnit(factory, cmd.teamId)) continue;
+                        com.corrodinggames.rts.gameFramework.GameCommand gc = engine.cf.a(team);
+                        gc.a(factory);
+                        gc.a(factory.posX, factory.posY, buildType, 1);
+                        System.out.println("[OpenAI] Factory " + factory.bs + " producing " + typeName);
+                    }
+                    GameEngine.f("AI", "Producing " + count + "x " + typeName);
+                }
+                break;
+            }
+                
             case MOVE: {
                 List<BaseUnit> units = findUnitsByTypeSafe(cmd.teamId, cmd.unitType);
                 for (int i = 0; i < Math.min(units.size(), cmd.count); i++) {
@@ -236,27 +283,58 @@ public class OpenAIPlayerController {
             }
             
             case NUKE: {
-                List<BaseUnit> nukes = findUnitsByTypeSafe(cmd.teamId, "nuke");
-                if (!nukes.isEmpty()) {
-                    for (BaseUnit u : nukes) {
-                        if (!validateUnit(u, cmd.teamId)) continue;
+                // 查找核弹发射井
+                List<BaseUnit> nukeSilos = findUnitsByTypeSafe(cmd.teamId, "NukeLaucher");
+                nukeSilos.addAll(findUnitsByTypeSafe(cmd.teamId, "nuke_launcher"));
+                nukeSilos.addAll(findUnitsByTypeSafe(cmd.teamId, "nuke"));
+                
+                if (!nukeSilos.isEmpty()) {
+                    // 有核弹井，发射核弹
+                    int launched = 0;
+                    for (BaseUnit silo : nukeSilos) {
+                        if (!validateUnit(silo, cmd.teamId)) continue;
                         com.corrodinggames.rts.gameFramework.GameCommand gc = engine.cf.a(team);
-                        gc.a(u);
-                        gc.b(cmd.x, cmd.y);
+                        gc.a(silo);
+                        gc.b(cmd.x, cmd.y);  // 发射到目标坐标
+                        launched++;
                     }
                     GameEngine.f("AI", "NUCLEAR LAUNCH at (" + (int)cmd.x + "," + (int)cmd.y + ")!");
-                    System.out.println("[OpenAI] NUKE launched");
+                    System.out.println("[OpenAI] NUKE launched from " + launched + " silo(s)");
                 } else {
-                    // 没核弹井，所有战斗单位攻击目标
+                    // 没有核弹井，先建造一个
+                    System.out.println("[OpenAI] No nuke silo found, building one first");
+                    List<BaseUnit> builders = findUnitsByTypeSafe(cmd.teamId, "builder");
+                    builders.addAll(findUnitsByTypeSafe(cmd.teamId, "engineer"));
+                    if (!builders.isEmpty()) {
+                        BaseUnit builder = builders.get(0);
+                        if (validateUnit(builder, cmd.teamId)) {
+                            com.corrodinggames.rts.game.units.UnitType nukeType = resolveUnitType("NukeLaucher");
+                            if (nukeType != null) {
+                                float bx = builder.posX + 150;
+                                float by = builder.posY + 100;
+                                com.corrodinggames.rts.gameFramework.GameCommand gc = engine.cf.a(team);
+                                gc.a(builder);
+                                gc.a(bx, by, nukeType, 1);
+                                System.out.println("[OpenAI] Builder " + builder.bs + " building NukeLaucher at (" + (int)bx + "," + (int)by + ")");
+                                GameEngine.f("AI", "Building NukeLauncher...");
+                            }
+                        }
+                    }
+                    // 同时所有战斗单位攻击目标
                     List<BaseUnit> fighters = findUnitsByTypeSafe(cmd.teamId, "tank");
+                    fighters.addAll(findUnitsByTypeSafe(cmd.teamId, "heavyTank"));
                     fighters.addAll(findUnitsByTypeSafe(cmd.teamId, "mech"));
+                    int attackCount = 0;
                     for (BaseUnit u : fighters) {
                         if (!validateUnit(u, cmd.teamId)) continue;
                         com.corrodinggames.rts.gameFramework.GameCommand gc = engine.cf.a(team);
                         gc.a(u);
                         gc.b(cmd.x, cmd.y);
+                        attackCount++;
                     }
-                    GameEngine.f("AI", "No nuke silo — all units attack (" + (int)cmd.x + "," + (int)cmd.y + ")");
+                    if (attackCount > 0) {
+                        GameEngine.f("AI", "Building nuke silo... meanwhile " + attackCount + " units attack (" + (int)cmd.x + "," + (int)cmd.y + ")");
+                    }
                 }
                 break;
             }
@@ -300,6 +378,7 @@ public class OpenAIPlayerController {
     // ================================================================
     private void initialize() {
         initialized = true;
+        initTimestamp = System.currentTimeMillis();
         System.out.println("[OpenAI] Initializing controller...");
         
         OpenAIClient client = OpenAIClient.getInstance();
@@ -441,15 +520,26 @@ public class OpenAIPlayerController {
     // ================================================================
     private void updateValidUnitIds(int teamId) {
         Set<Integer> ids = new HashSet<>();
+        int totalUnits = 0;
+        java.util.Map<Integer, Integer> unitsPerTeam = new java.util.HashMap<>();
+        
         try {
             if (BaseUnit.bE != null) {
                 int size = BaseUnit.bE.size();
+                totalUnits = size;
+                
                 for (int i = 0; i < size; i++) {
                     Object obj = BaseUnit.bE.get(i);
                     if (obj instanceof BaseUnit) {
                         BaseUnit u = (BaseUnit) obj;
-                        if (!u.u() && u.bX != null && u.bX.k == teamId && u.bs != -9999) {
-                            ids.add(u.bs);
+                        if (!u.u() && u.bX != null && u.bs != -9999) {
+                            // 统计每个队伍的单位数
+                            int tId = u.bX.k;
+                            unitsPerTeam.merge(tId, 1, Integer::sum);
+                            
+                            if (tId == teamId) {
+                                ids.add(u.bs);
+                            }
                         }
                     }
                 }
@@ -457,8 +547,30 @@ public class OpenAIPlayerController {
         } catch (Exception e) {
             System.out.println("[OpenAI] Error building validUnitIds: " + e.toString());
         }
+        
         validUnitIds = Collections.synchronizedSet(ids);
-        System.out.println("[OpenAI] Valid unit IDs for team " + teamId + ": " + ids.size() + " units");
+        
+        // 详细诊断日志
+        System.out.println("[OpenAI] === Unit Diagnostic ===");
+        System.out.println("[OpenAI] Total units in game: " + totalUnits);
+        System.out.println("[OpenAI] Units per team: " + unitsPerTeam);
+        System.out.println("[OpenAI] Team " + teamId + " has " + ids.size() + " units");
+        
+        // 检查原版 AIController 状态
+        PlayerTeam[] teams = PlayerTeam.d();
+        if (teams != null) {
+            for (PlayerTeam t : teams) {
+                if (t != null && t.k == teamId) {
+                    System.out.println("[OpenAI] Team " + teamId + " isAI=" + t.w + " eliminated=" + t.b());
+                    if (t instanceof com.corrodinggames.rts.game.a.AIController) {
+                        com.corrodinggames.rts.game.a.AIController aic = (com.corrodinggames.rts.game.a.AIController) t;
+                        System.out.println("[OpenAI] AIController aZ=" + aic.aZ + " aX=" + aic.aX);
+                    }
+                    break;
+                }
+            }
+        }
+        System.out.println("[OpenAI] ========================");
     }
     
     // ================================================================
@@ -485,10 +597,27 @@ public class OpenAIPlayerController {
                 String[] p = line.substring(5).trim().split("\\s+");
                 if (p.length >= 4) {
                     try {
-                        commandQueue.add(new PendingCommand(PendingCommand.Type.MOVE, teamId,
-                            Float.parseFloat(p[0]), Float.parseFloat(p[1]), p[2].toLowerCase(), Integer.parseInt(p[3]), null));
+                        float x, y;
+                        String type;
+                        int count;
+                        // 检测格式：第一个是数字 = "x y type count"，否则 = "type count x y"
+                        try {
+                            Float.parseFloat(p[0]);
+                            // Format A: x y type count
+                            x = Float.parseFloat(p[0]);
+                            y = Float.parseFloat(p[1]);
+                            type = p[2].toLowerCase();
+                            count = Integer.parseInt(p[3]);
+                        } catch (NumberFormatException nfe) {
+                            // Format B: type count x y
+                            type = p[0].toLowerCase();
+                            count = Integer.parseInt(p[1]);
+                            x = Float.parseFloat(p[2]);
+                            y = Float.parseFloat(p[3]);
+                        }
+                        commandQueue.add(new PendingCommand(PendingCommand.Type.MOVE, teamId, x, y, type, count, null));
                         parsed++;
-                    } catch (NumberFormatException e) {
+                    } catch (Exception e) {
                         System.out.println("[OpenAI] Bad MOVE format: " + line);
                     }
                 }
@@ -497,10 +626,24 @@ public class OpenAIPlayerController {
                 String[] p = line.substring(7).trim().split("\\s+");
                 if (p.length >= 4) {
                     try {
-                        commandQueue.add(new PendingCommand(PendingCommand.Type.ATTACK, teamId,
-                            Float.parseFloat(p[0]), Float.parseFloat(p[1]), p[2].toLowerCase(), Integer.parseInt(p[3]), null));
+                        float x, y;
+                        String type;
+                        int count;
+                        try {
+                            Float.parseFloat(p[0]);
+                            x = Float.parseFloat(p[0]);
+                            y = Float.parseFloat(p[1]);
+                            type = p[2].toLowerCase();
+                            count = Integer.parseInt(p[3]);
+                        } catch (NumberFormatException nfe) {
+                            type = p[0].toLowerCase();
+                            count = Integer.parseInt(p[1]);
+                            x = Float.parseFloat(p[2]);
+                            y = Float.parseFloat(p[3]);
+                        }
+                        commandQueue.add(new PendingCommand(PendingCommand.Type.ATTACK, teamId, x, y, type, count, null));
                         parsed++;
-                    } catch (NumberFormatException e) {
+                    } catch (Exception e) {
                         System.out.println("[OpenAI] Bad ATTACK format: " + line);
                     }
                 }
@@ -533,9 +676,11 @@ public class OpenAIPlayerController {
                 String[] p = line.substring(6).trim().split("\\s+");
                 if (p.length >= 2) {
                     try {
-                        // BUILD 转为 MOVE（让建造者移动并开始建造）
-                        commandQueue.add(new PendingCommand(PendingCommand.Type.MOVE, teamId,
-                            0, 0, "builder", Integer.parseInt(p[1]), null));
+                        // BUILD: type count — 创建 BUILD 命令
+                        String buildTypeName = p[0].toLowerCase();
+                        int count = Integer.parseInt(p[1]);
+                        commandQueue.add(new PendingCommand(PendingCommand.Type.BUILD, teamId,
+                            0, 0, buildTypeName, count, null));
                         parsed++;
                     } catch (NumberFormatException e) {
                         System.out.println("[OpenAI] Bad BUILD format: " + line);
@@ -650,6 +795,92 @@ public class OpenAIPlayerController {
             }
         } catch (Exception ignored) {}
         return "unit_" + unit.bs;
+    }
+    
+    // ================================================================
+    // BUILD 辅助方法
+    // ================================================================
+    
+    /**
+     * 将 AI 输出的字符串类型名解析为游戏 UnitType
+     */
+    private static final java.util.Map<String, String> UNIT_TYPE_ALIASES = new java.util.HashMap<>();
+    static {
+        // 建筑
+        UNIT_TYPE_ALIASES.put("extractor", "extractor");
+        UNIT_TYPE_ALIASES.put("land_factory", "landFactory");
+        UNIT_TYPE_ALIASES.put("air_factory", "airFactory");
+        UNIT_TYPE_ALIASES.put("sea_factory", "seaFactory");
+        UNIT_TYPE_ALIASES.put("laser_defence", "laserDefence");
+        UNIT_TYPE_ALIASES.put("laser_turret", "laserDefence");
+        UNIT_TYPE_ALIASES.put("repair_bay", "repairbay");
+        UNIT_TYPE_ALIASES.put("repair_station", "repairbay");
+        UNIT_TYPE_ALIASES.put("nuke_launcher", "NukeLaucher");
+        UNIT_TYPE_ALIASES.put("nuke_silo", "NukeLaucher");
+        UNIT_TYPE_ALIASES.put("anti_nuke", "AntiNukeLaucher");
+        UNIT_TYPE_ALIASES.put("turret", "turret");
+        UNIT_TYPE_ALIASES.put("gun_turret", "turret");
+        UNIT_TYPE_ALIASES.put("fabricator", "fabricator");
+        // 单位
+        UNIT_TYPE_ALIASES.put("heavy_tank", "heavyTank");
+        UNIT_TYPE_ALIASES.put("tank", "heavyTank");
+        UNIT_TYPE_ALIASES.put("hover_tank", "hoverTank");
+        UNIT_TYPE_ALIASES.put("heavy_hover_tank", "heavyHoverTank");
+        UNIT_TYPE_ALIASES.put("laser_tank", "laserTank");
+        UNIT_TYPE_ALIASES.put("mega_tank", "megaTank");
+        UNIT_TYPE_ALIASES.put("tank_destroyer", "tankDestroyer");
+        UNIT_TYPE_ALIASES.put("artillery", "artillery");
+        UNIT_TYPE_ALIASES.put("helicopter", "helicopter");
+        UNIT_TYPE_ALIASES.put("heli", "helicopter");
+        UNIT_TYPE_ALIASES.put("gunship", "gunShip");
+        UNIT_TYPE_ALIASES.put("gun_ship", "gunShip");
+        UNIT_TYPE_ALIASES.put("airship", "airShip");
+        UNIT_TYPE_ALIASES.put("air_ship", "airShip");
+        UNIT_TYPE_ALIASES.put("dropship", "dropship");
+        UNIT_TYPE_ALIASES.put("missile_ship", "missileShip");
+        UNIT_TYPE_ALIASES.put("battle_ship", "battleShip");
+        UNIT_TYPE_ALIASES.put("gunboat", "gunBoat");
+        UNIT_TYPE_ALIASES.put("hovercraft", "hovercraft");
+        UNIT_TYPE_ALIASES.put("builder", "builder");
+        UNIT_TYPE_ALIASES.put("engineer", "engineer");
+        // NukeLaucher 直接匹配
+        UNIT_TYPE_ALIASES.put("NukeLaucher", "NukeLaucher");
+        UNIT_TYPE_ALIASES.put("AntiNukeLaucher", "AntiNukeLaucher");
+    }
+    
+    private com.corrodinggames.rts.game.units.UnitType resolveUnitType(String name) {
+        if (name == null || name.isEmpty()) return null;
+        String lower = name.toLowerCase().replace(" ", "_");
+        // 先查别名表
+        String resolved = UNIT_TYPE_ALIASES.get(lower);
+        if (resolved == null) {
+            // 尝试直接匹配枚举名（大小写不敏感）
+            resolved = name;
+        }
+        try {
+            return com.corrodinggames.rts.game.units.UnitTypeEnum.a(resolved);
+        } catch (Exception e) {
+            System.out.println("[OpenAI] resolveUnitType: '" + name + "' → not found");
+            return null;
+        }
+    }
+    
+    /**
+     * 根据单位类型返回对应的工厂类型
+     */
+    private String getFactoryForUnit(String typeName) {
+        if (typeName == null) return "landFactory";
+        String lower = typeName.toLowerCase().replace(" ", "_");
+        // 空军单位从空军工厂生产
+        if (lower.contains("heli") || lower.contains("gunship") || lower.contains("airship") || lower.contains("dropship")) {
+            return "airFactory";
+        }
+        // 海军单位从海军工厂生产
+        if (lower.contains("ship") || lower.contains("boat")) {
+            return "seaFactory";
+        }
+        // 其他单位从陆军工厂生产
+        return "landFactory";
     }
     
     // ================================================================

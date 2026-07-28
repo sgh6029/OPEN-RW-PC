@@ -21,3 +21,20 @@ java.lang.UnsatisfiedLinkError: D:\OPEN-RW-PC-Work\libs\natives\windows\rocketCo
 	at com.corrodinggames.rts.java.GameStartupRunnable.run(GameStartupRunnable.java:33)
 	at java.base/java.lang.Thread.run(Thread.java:1583)
 
+
+fatal (at 2026-07-28 10:58:57.890 - 1.15)
+java.util.ConcurrentModificationException
+	at java.base/java.util.ArrayList$Itr.checkForComodification(ArrayList.java:1095)
+	at java.base/java.util.ArrayList$Itr.next(ArrayList.java:1049)
+	at com.corrodinggames.rts.gameFramework.CommandQueue.d(CommandQueue.java:89)
+	at com.corrodinggames.rts.gameFramework.CommandQueue.c(CommandQueue.java:79)
+	at com.corrodinggames.rts.game.GameLogic.updateGameLogic(GameLogic.java:1710)
+	at com.corrodinggames.rts.game.GameLogic.processGameLogic(GameLogic.java:1388)
+	at com.corrodinggames.rts.game.GameLogic.processGameFrame(GameLogic.java:1122)
+	at com.corrodinggames.rts.java.SlickGameHandler.render(SlickGameHandler.java:756)
+	at com.corrodinggames.rts.java.SlickGameContainer.updateAndRender(SlickGameContainer.java:119)
+	at com.corrodinggames.rts.java.SlickGameContainer.gameLoop(SlickGameContainer.java:59)
+	at org.newdawn.slick.AppGameContainer.start(AppGameContainer.java:321)
+	at com.corrodinggames.rts.java.GameStartupRunnable.run(GameStartupRunnable.java:33)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
